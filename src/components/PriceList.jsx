@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { usePriceList, useInventoryItems } from '../lib/data'
-import { SectionTitle, Ok, Err, tableWrap, th, td, rs } from './shared'
+import { SectionTitle, Ok, Err, tableWrap, th, td } from './shared'
+import { rs } from '../lib/data'
 import { field, label, input, select, primaryBtn, actionBtn } from './formStyles'
 
 export default function PriceList() {

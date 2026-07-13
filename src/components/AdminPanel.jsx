@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { callAdminFn } from '../lib/supabase'
 import { useStaff, useAllRecords, useAllCash, rs } from '../lib/data'
