@@ -1,0 +1,28 @@
+@media (max-width: 860px) {
+  .pd-sidebar {
+    position: fixed !important;
+    left: 0; top: 0; height: 100vh;
+    z-index: 300;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--shadow-lift);
+  }
+  .pd-sidebar.pd-open { transform: translateX(0); }
+  .pd-topbar { display: flex !important; }
+  .pd-content { padding: 18px 16px !important; }
+}
+@media (min-width: 861px) { .pd-menu-btn { display: none; } }
+
+.nav-item:hover { background: var(--bg-elevated) !important; color: var(--text-primary) !important; }
+.nav-item-active { background: var(--gold-soft) !important; color: var(--gold) !important; }
+.nav-item-admin-active { background: rgba(226,101,75,0.12) !important; color: var(--danger) !important; }
+
+/* Records table: hide table on mobile, show cards */
+@media (max-width: 640px) {
+  .records-desktop-table { display: none !important; }
+  .records-mobile-cards { display: block !important; }
+  .pd-content { padding: 14px 12px !important; }
+}
+@media (min-width: 641px) {
+  .records-mobile-cards { display: none !important; }
+}

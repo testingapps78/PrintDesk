@@ -1,0 +1,10 @@
+export const field = { display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 14 }
+export const label = { fontSize: 11.5, color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }
+export const input = { background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', fontSize: 14, fontFamily: 'var(--font-ui)', outline: 'none', width: '100%' }
+export const select = { ...input, appearance: 'auto' }
+export const textarea = { ...input, resize: 'vertical', minHeight: 80 }
+export const primaryBtn = { background: 'var(--gold)', color: 'var(--text-on-accent)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '11px 18px', fontSize: 14, fontWeight: 800, width: '100%', cursor: 'pointer' }
+export const secondaryBtn = { background: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '11px 18px', fontSize: 14, fontWeight: 700, width: '100%', cursor: 'pointer' }
+export const ghostBtn = { background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '7px 12px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }
+export const dangerBtn = { ...primaryBtn, background: 'var(--danger)', color: '#fff' }
+export const actionBtn = { background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-secondary)', padding: '5px 11px', borderRadius: 'var(--radius-sm)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }

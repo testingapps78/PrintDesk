@@ -1,0 +1,15 @@
+:root,[data-theme="dark"]{--bg-base:#15161A;--bg-surface:#1F2023;--bg-elevated:#292A2E;--bg-elevated-hover:#323338;--border-subtle:#2C2D31;--border:#38393E;--border-strong:#46474D;--text-primary:#F1F1EA;--text-secondary:#A4A6AC;--text-muted:#6B6D73;--text-on-accent:#15161A;--gold:#D4A24C;--gold-soft:rgba(212,162,76,0.14);--gold-border:rgba(212,162,76,0.35);--state-blue:#0083E2;--state-blue-soft:rgba(0,131,226,0.14);--success:#5FBE8A;--success-soft:rgba(95,190,138,0.14);--warning:#E0A847;--warning-soft:rgba(224,168,71,0.14);--danger:#E2654B;--danger-soft:rgba(226,101,75,0.14);--shadow-soft:0 1px 2px rgba(0,0,0,0.3),0 8px 24px -8px rgba(0,0,0,0.4);--shadow-lift:0 4px 12px rgba(0,0,0,0.35),0 24px 48px -16px rgba(0,0,0,0.55)}
+[data-theme="light"]{--bg-base:#F0EFE9;--bg-surface:#FAFAF7;--bg-elevated:#FFFFFF;--bg-elevated-hover:#F4F3EE;--border-subtle:#E4E3DC;--border:#D2D1C9;--border-strong:#B8B7AF;--text-primary:#1A1A18;--text-secondary:#5A5A56;--text-muted:#9A9A94;--text-on-accent:#FFFFFF;--gold:#B8862E;--gold-soft:rgba(184,134,46,0.12);--gold-border:rgba(184,134,46,0.30);--state-blue:#0070C4;--state-blue-soft:rgba(0,112,196,0.10);--success:#2E9E62;--success-soft:rgba(46,158,98,0.12);--warning:#C4880A;--warning-soft:rgba(196,136,10,0.12);--danger:#C4401E;--danger-soft:rgba(196,64,30,0.12);--shadow-soft:0 1px 3px rgba(0,0,0,0.08),0 4px 12px -4px rgba(0,0,0,0.10);--shadow-lift:0 2px 8px rgba(0,0,0,0.10),0 12px 32px -8px rgba(0,0,0,0.14)}
+:root{--font-display:'Bodoni Moda','Georgia',serif;--font-ui:'Manrope',-apple-system,'Segoe UI',sans-serif;--radius-sm:8px;--radius-md:12px;--radius-lg:18px}
+*{box-sizing:border-box}
+html,body,#root{margin:0;padding:0;min-height:100vh;background:var(--bg-base);color:var(--text-primary);font-family:var(--font-ui);-webkit-font-smoothing:antialiased;transition:background 0.2s ease,color 0.2s ease}
+body{font-size:14px;line-height:1.5}
+.tabular{font-variant-numeric:tabular-nums;letter-spacing:0.01em}
+::selection{background:var(--gold-soft);color:var(--text-primary)}
+a{color:inherit}button{font-family:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:4px}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:8px;border:2px solid var(--bg-base)}
+::-webkit-scrollbar-thumb:hover{background:var(--text-muted)}
+@media(prefers-reduced-motion:reduce){*{animation-duration:0.01ms!important;transition-duration:0.01ms!important}}
