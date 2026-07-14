@@ -17,6 +17,7 @@ const ALL_NAV = [
   { key: 'prices',     label: 'Price List',     icon: '◈',  page: 'prices', clerkOnly: true },
   { key: 'admin',      label: 'Admin Panel',    icon: '⚙',  page: 'admin',   clerkOnly: true },
   { key: 'settings',   label: 'Settings',       icon: '🔧', page: 'settings', clerkOnly: true },
+  { key: 'export',     label: 'Export Data',    icon: '⬇',  page: 'export',   clerkOnly: true },
 ]
 
 export default function Shell({ view, setView, children, unreadMessages = 0 }) {

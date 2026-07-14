@@ -11,6 +11,7 @@ import BillGenerator from './components/BillGenerator'
 import PriceList from './components/PriceList'
 import AdminPanel from './components/AdminPanel'
 import Settings from './components/Settings'
+import ExcelExport from './components/ExcelExport'
 import { useUnreadCounts } from './lib/data'
 
 function Gate() {
@@ -48,6 +49,7 @@ function Gate() {
       {safeView === 'prices'     && <PriceList />}
       {safeView === 'admin'      && <AdminPanel />}
       {safeView === 'settings'   && <Settings />}
+      {safeView === 'export'     && <ExcelExport />}
     </Shell>
   )
 }
