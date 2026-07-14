@@ -52,7 +52,6 @@ export default function Dashboard() {
         supabase.from('print_records').update({
           status: 'Paid',
           amount_paid: r.amount,
-          remaining: 0,
           payment_date: new Date().toISOString().slice(0, 10),
           updated_at: new Date().toISOString(),
         }).eq('id', r.id)

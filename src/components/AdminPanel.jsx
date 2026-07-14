@@ -295,13 +295,11 @@ function RecordsTab() {
 
   async function saveEdit() {
     const newAmount = Number(editDraft.amount)
-    const newRemaining = Math.max(0, newAmount - Number(editDraft.amount_paid || 0))
     const { error: e } = await supabase.from('print_records').update({
       entry_date: editDraft.entry_date,
       description: editDraft.description,
       copies: Number(editDraft.copies),
       amount: newAmount,
-      remaining: newRemaining,
       updated_at: new Date().toISOString(),
     }).eq('id', editId)
     if (!e) { setOk('Updated.'); setEditId(null); refresh() } else setErr(e.message)

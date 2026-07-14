@@ -55,7 +55,7 @@ export default function RecordsTable() {
     setBulkPaying(true)
     const toUpdate = records.filter(r => selected.has(r.id))
     await Promise.all(toUpdate.map(r =>
-      supabase.from('print_records').update({ status: 'Paid', amount_paid: r.amount, remaining: 0, payment_date: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() }).eq('id', r.id)
+      supabase.from('print_records').update({ status: 'Paid', amount_paid: r.amount, payment_date: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() }).eq('id', r.id)
     ))
     setSelected(new Set())
     setOk(`${toUpdate.length} records marked as Paid.`)
@@ -292,7 +292,6 @@ function AddModal({ staff, priceItems, profile, onClose, onSaved }) {
       copies: totals.copies,
       amount: totals.amount,
       amount_paid: 0,
-      remaining: totals.amount,
       status: 'Pending',
       remarks: remarks.trim() || null,
       created_by: profile?.id || null,
@@ -393,7 +392,7 @@ function EditModal({ record, onClose, onSaved }) {
     const newRemaining = Math.max(0, newAmount - Number(record.amount_paid || 0))
     await supabase.from('print_records').update({
       entry_date: date, description: desc, copies: Number(copies),
-      amount: newAmount, remaining: newRemaining,
+      amount: newAmount,
       remarks: remarks || null, updated_at: new Date().toISOString(),
     }).eq('id', record.id)
     setSaving(false); onSaved()
@@ -433,7 +432,6 @@ function StatusModal({ record, onClose, onSaved }) {
     await supabase.from('print_records').update({
       status: finalStatus,
       amount_paid: finalPaid,
-      remaining: Number(record.amount) - finalPaid,
       payment_date: finalStatus === 'Paid' ? new Date().toISOString().slice(0, 10) : record.payment_date,
       updated_at: new Date().toISOString(),
     }).eq('id', record.id)
