@@ -25,14 +25,14 @@ export function useStaff() {
 }
 
 // ── print records — filters applied server-side ────────────────────────
-export function usePrintRecords({ status, personId, month, showArchived } = {}) {
+export function usePrintRecords({ status, personId, month, showArchived, category } = {}) {
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
 
   const fetch = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('print_records')
-      .select('id,person_id,other_person_name,entry_date,description,copies,amount,amount_paid,remaining,status,payment_date,remarks,is_archived,created_at,person:staff!print_records_person_id_fkey(id,full_name,designation)')
+      .select('id,person_id,other_person_name,visitor_name,category,entry_date,description,copies,amount,amount_paid,remaining,status,payment_date,remarks,is_archived,created_at,person:staff!print_records_person_id_fkey(id,full_name,designation)')
       .order('entry_date', { ascending: false })
       .order('created_at', { ascending: false })
 
@@ -40,11 +40,12 @@ export function usePrintRecords({ status, personId, month, showArchived } = {}) 
     if (status && status !== 'All') q = q.eq('status', status)
     if (personId && personId !== 'all') q = q.eq('person_id', personId)
     if (month) q = q.gte('entry_date', `${month}-01`).lte('entry_date', `${month}-31`)
+    if (category && category !== 'all') q = q.eq('category', category)
 
     const { data, error } = await q
     if (!error) setRecords(data || [])
     setLoading(false)
-  }, [status, personId, month, showArchived])
+  }, [status, personId, month, showArchived, category])
 
   useEffect(() => { fetch() }, [fetch])
   return { records, loading, refresh: fetch }
@@ -57,7 +58,7 @@ export function useAllRecords() {
   const refresh = useCallback(async () => {
     setLoading(true)
     const { data } = await supabase.from('print_records')
-      .select('id,person_id,other_person_name,entry_date,description,copies,amount,amount_paid,remaining,status,is_archived,person:staff!print_records_person_id_fkey(id,full_name,designation)')
+      .select('id,person_id,other_person_name,visitor_name,category,entry_date,description,copies,amount,amount_paid,remaining,status,is_archived,person:staff!print_records_person_id_fkey(id,full_name,designation)')
       .order('entry_date', { ascending: false })
     setRecords(data || [])
     setLoading(false)

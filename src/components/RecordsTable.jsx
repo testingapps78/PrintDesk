@@ -2,11 +2,21 @@ import { useState, useMemo } from 'react'
 import { useAuth } from '../lib/auth'
 import { useStaff, usePrintRecords, usePriceList, daysOverdue, rs } from '../lib/data'
 import { supabase } from '../lib/supabase'
-import { StatusChip, Err, Ok, SectionTitle } from './shared'
+import { StatusChip, Err, Ok } from './shared'
 import Modal from './Modal'
 import { field, label, input, select, primaryBtn, ghostBtn, actionBtn } from './formStyles'
 
 const PAGE_SIZES = [10, 20, 50, 100]
+const CATEGORIES = [
+  { value: 'office_staff', label: 'Office Staff', color: 'var(--state-blue)', bg: 'var(--state-blue-soft)' },
+  { value: 'visitor', label: 'Visitor / Client', color: 'var(--warning)', bg: 'var(--warning-soft)' },
+  { value: 'personal', label: 'Personal / Outside', color: 'var(--text-muted)', bg: 'var(--bg-elevated)' },
+]
+
+function CatBadge({ category }) {
+  const c = CATEGORIES.find(x => x.value === category) || CATEGORIES[0]
+  return <span style={{ fontSize: 10.5, fontWeight: 700, color: c.color, background: c.bg, padding: '2px 7px', borderRadius: 999 }}>{c.label}</span>
+}
 
 export default function RecordsTable() {
   const { profile, isClerk, canViewAll } = useAuth()
@@ -16,6 +26,7 @@ export default function RecordsTable() {
   const [statusFilter, setStatusFilter] = useState('All')
   const [personFilter, setPersonFilter] = useState('all')
   const [monthFilter, setMonthFilter] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const [pageSize, setPageSize] = useState(10)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState(new Set())
@@ -24,17 +35,17 @@ export default function RecordsTable() {
   const [statusRec, setStatusRec] = useState(null)
   const [ok, setOk] = useState('')
   const [err, setErr] = useState('')
-  const [bulkPaying, setBulkPaying] = useState(false)
+  const [bulkWorking, setBulkWorking] = useState(false)
 
   const filters = useMemo(() => ({
     status: statusFilter !== 'All' ? statusFilter : undefined,
     personId: (canViewAll && personFilter !== 'all') ? personFilter : (!canViewAll ? profile?.id : undefined),
     month: monthFilter || undefined,
-  }), [statusFilter, personFilter, monthFilter, canViewAll, profile?.id])
+    category: categoryFilter !== 'all' ? categoryFilter : undefined,
+  }), [statusFilter, personFilter, monthFilter, categoryFilter, canViewAll, profile?.id])
 
   const { records, loading, refresh } = usePrintRecords(filters)
 
-  // Month options from records
   const months = useMemo(() => {
     const m = new Set(records.map(r => r.entry_date?.slice(0, 7)).filter(Boolean))
     return Array.from(m).sort().reverse()
@@ -43,34 +54,53 @@ export default function RecordsTable() {
   const totalPages = Math.ceil(records.length / pageSize)
   const pageRecs = records.slice((page - 1) * pageSize, page * pageSize)
 
-  const setStatus = (s) => { setStatusFilter(s); setPage(1) }
-  const setPerson = (p) => { setPersonFilter(p); setPage(1) }
-  const setMonth = (m) => { setMonthFilter(m); setPage(1) }
+  const setStatus = s => { setStatusFilter(s); setPage(1); setSelected(new Set()) }
+  const setPerson = p => { setPersonFilter(p); setPage(1); setSelected(new Set()) }
+  const setMonth = m => { setMonthFilter(m); setPage(1); setSelected(new Set()) }
+  const setCat = c => { setCategoryFilter(c); setPage(1); setSelected(new Set()) }
 
   const toggleSel = id => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toggleAll = () => setSelected(selected.size === pageRecs.length ? new Set() : new Set(pageRecs.map(r => r.id)))
 
-  async function bulkPay() {
+  function showOk(m) { setOk(m); setTimeout(() => setOk(''), 4000) }
+  function showErr(m) { setErr(m); setTimeout(() => setErr(''), 5000) }
+
+  async function bulkMarkPaid() {
     if (!selected.size) return
-    setBulkPaying(true)
-    const toUpdate = records.filter(r => selected.has(r.id))
+    setBulkWorking(true)
+    const toUpdate = records.filter(r => selected.has(r.id) && r.status !== 'Paid')
     await Promise.all(toUpdate.map(r =>
-      supabase.from('print_records').update({ status: 'Paid', amount_paid: r.amount, payment_date: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString() }).eq('id', r.id)
+      supabase.from('print_records').update({
+        status: 'Paid', amount_paid: r.amount,
+        payment_date: new Date().toISOString().slice(0, 10),
+        updated_at: new Date().toISOString(),
+      }).eq('id', r.id)
     ))
     setSelected(new Set())
-    setOk(`${toUpdate.length} records marked as Paid.`)
-    setBulkPaying(false)
-    refresh()
+    showOk(`✓ ${toUpdate.length} records marked as Paid.`)
+    setBulkWorking(false); refresh()
+  }
+
+  async function bulkArchive() {
+    if (!selected.size) return
+    setBulkWorking(true)
+    await Promise.all(Array.from(selected).map(id =>
+      supabase.from('print_records').update({ is_archived: true }).eq('id', id)
+    ))
+    setSelected(new Set())
+    showOk(`✓ ${selected.size} records archived.`)
+    setBulkWorking(false); refresh()
   }
 
   async function archiveRec(id) {
     await supabase.from('print_records').update({ is_archived: true }).eq('id', id)
-    setOk('Archived.'); refresh()
+    showOk('Archived.'); refresh()
   }
+
   async function deleteRec(id) {
-    if (!window.confirm('Delete this record permanently?')) return
+    if (!window.confirm('Delete this record permanently? Cannot be undone.')) return
     await supabase.from('print_records').delete().eq('id', id)
-    setOk('Deleted.'); refresh()
+    showOk('Deleted.'); refresh()
   }
 
   return (
@@ -78,31 +108,38 @@ export default function RecordsTable() {
       <Err msg={err} /><Ok msg={ok} />
 
       {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         {['All', 'Pending', 'Partially Paid', 'Paid'].map(s => (
           <button key={s} onClick={() => setStatus(s)}
-            style={{ background: statusFilter === s ? 'var(--gold-soft)' : 'var(--bg-surface)', border: statusFilter === s ? '1px solid var(--gold-border)' : '1px solid var(--border-subtle)', color: statusFilter === s ? 'var(--gold)' : 'var(--text-secondary)', padding: '6px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            style={{ background: statusFilter === s ? 'var(--gold-soft)' : 'var(--bg-surface)', border: statusFilter === s ? '1px solid var(--gold-border)' : '1px solid var(--border-subtle)', color: statusFilter === s ? 'var(--gold)' : 'var(--text-secondary)', padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
             {s}
           </button>
         ))}
 
+        {/* Category filter */}
+        <select value={categoryFilter} onChange={e => setCat(e.target.value)}
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)', padding: '5px 9px', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
+          <option value="all">All Categories</option>
+          {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+
         {canViewAll && (
           <select value={personFilter} onChange={e => setPerson(e.target.value)}
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: 12.5, fontFamily: 'var(--font-ui)' }}>
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)', padding: '5px 9px', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
             <option value="all">All persons</option>
             {staff.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
           </select>
         )}
 
         <select value={monthFilter} onChange={e => setMonth(e.target.value)}
-          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: 12.5, fontFamily: 'var(--font-ui)' }}>
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)', padding: '5px 9px', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
           <option value="">All months</option>
           {months.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
           <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)', padding: '6px 8px', fontSize: 12.5, fontFamily: 'var(--font-ui)' }}>
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)', padding: '5px 8px', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
             {PAGE_SIZES.map(n => <option key={n} value={n}>{n}/page</option>)}
           </select>
           {isClerk && (
@@ -113,13 +150,17 @@ export default function RecordsTable() {
         </div>
       </div>
 
-      {/* Bulk actions bar */}
+      {/* Bulk actions */}
       {isClerk && selected.size > 0 && (
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 12px', background: 'var(--gold-soft)', border: '1px solid var(--gold-border)', borderRadius: 'var(--radius-sm)', marginBottom: 10 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', background: 'var(--gold-soft)', border: '1px solid var(--gold-border)', borderRadius: 'var(--radius-sm)', marginBottom: 10, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--gold)' }}>{selected.size} selected</span>
-          <button onClick={bulkPay} disabled={bulkPaying}
-            style={{ background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', padding: '5px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-            {bulkPaying ? '…' : '✓ Mark Paid'}
+          <button onClick={bulkMarkPaid} disabled={bulkWorking}
+            style={{ background: 'var(--success)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', padding: '5px 13px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            {bulkWorking ? '…' : '✓ Mark Paid'}
+          </button>
+          <button onClick={bulkArchive} disabled={bulkWorking}
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-secondary)', borderRadius: 'var(--radius-sm)', padding: '5px 13px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            {bulkWorking ? '…' : '📦 Archive Selected'}
           </button>
           <button onClick={() => setSelected(new Set())}
             style={{ background: 'transparent', border: '1px solid var(--gold-border)', color: 'var(--gold)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
@@ -128,51 +169,53 @@ export default function RecordsTable() {
         </div>
       )}
 
-      {/* Table — hidden on mobile, cards shown instead */}
-      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'auto', marginBottom: 12 }}>
+      {/* Desktop table */}
+      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'auto', marginBottom: 10 }}>
         {loading ? (
           <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading…</div>
         ) : records.length === 0 ? (
           <div style={{ padding: 24, color: 'var(--text-muted)' }}>No records found.</div>
         ) : (
           <>
-            {/* Desktop table */}
             <table className="records-desktop-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr>
                   {isClerk && <th style={th}><input type="checkbox" onChange={toggleAll} checked={selected.size > 0 && selected.size === pageRecs.length} /></th>}
                   <th style={th}>Date</th>
                   <th style={th}>Person</th>
+                  <th style={th}>Category</th>
                   <th style={th}>Description</th>
                   <th style={{ ...th, textAlign: 'right' }}>Amount</th>
                   <th style={{ ...th, textAlign: 'right' }}>Paid</th>
                   <th style={{ ...th, textAlign: 'right' }}>Due</th>
                   <th style={th}>Status</th>
                   <th style={{ ...th, textAlign: 'center' }}>Days</th>
-                  {isClerk && <th style={th}></th>}
+                  {isClerk && <th style={th}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {pageRecs.map(r => {
                   const overdue = r.status !== 'Paid' ? daysOverdue(r.entry_date) : 0
+                  const personName = r.person?.full_name || r.visitor_name || r.other_person_name || 'Unnamed'
                   return (
                     <tr key={r.id} style={{ background: selected.has(r.id) ? 'var(--gold-soft)' : undefined }}>
                       {isClerk && <td style={td}><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSel(r.id)} /></td>}
                       <td className="tabular" style={{ ...td, whiteSpace: 'nowrap', fontSize: 12 }}>{r.entry_date}</td>
-                      <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap' }}>{r.person?.full_name || r.other_person_name}</td>
-                      <td style={{ ...td, color: 'var(--text-secondary)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description}</td>
+                      <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap' }}>{personName}</td>
+                      <td style={td}><CatBadge category={r.category} /></td>
+                      <td style={{ ...td, color: 'var(--text-secondary)', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>{r.description}</td>
                       <td className="tabular" style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>{rs(r.amount)}</td>
                       <td className="tabular" style={{ ...td, textAlign: 'right', color: 'var(--success)', whiteSpace: 'nowrap' }}>{rs(r.amount_paid || 0)}</td>
                       <td className="tabular" style={{ ...td, textAlign: 'right', color: (r.remaining || 0) > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: (r.remaining || 0) > 0 ? 700 : 400, whiteSpace: 'nowrap' }}>{rs(r.remaining || 0)}</td>
                       <td style={td}><StatusChip status={r.status} /></td>
-                      <td style={{ ...td, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <td style={{ ...td, textAlign: 'center' }}>
                         {overdue > 0
                           ? <span style={{ color: overdue > 30 ? 'var(--danger)' : overdue > 7 ? 'var(--warning)' : 'var(--text-secondary)', fontWeight: 700, fontSize: 12 }}>{overdue}d</span>
                           : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                       </td>
                       {isClerk && (
                         <td style={td}>
-                          <div style={{ display: 'flex', gap: 4, whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', gap: 3, whiteSpace: 'nowrap' }}>
                             <button style={{ ...actionBtn, fontSize: 11 }} onClick={() => setEditRec(r)}>Edit</button>
                             <button style={{ ...actionBtn, fontSize: 11 }} onClick={() => setStatusRec(r)}>Status</button>
                             <button style={{ ...actionBtn, fontSize: 11 }} onClick={() => archiveRec(r.id)}>Archive</button>
@@ -190,27 +233,33 @@ export default function RecordsTable() {
             <div className="records-mobile-cards" style={{ display: 'none' }}>
               {pageRecs.map(r => {
                 const overdue = r.status !== 'Paid' ? daysOverdue(r.entry_date) : 0
+                const personName = r.person?.full_name || r.visitor_name || r.other_person_name || 'Unnamed'
                 return (
-                  <div key={r.id} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-subtle)', background: selected.has(r.id) ? 'var(--gold-soft)' : undefined }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                  <div key={r.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', background: selected.has(r.id) ? 'var(--gold-soft)' : undefined }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: 14 }}>{r.person?.full_name || r.other_person_name}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>{r.entry_date} {overdue > 0 && <span style={{ color: overdue > 30 ? 'var(--danger)' : 'var(--warning)', fontWeight: 700, marginLeft: 6 }}>{overdue}d overdue</span>}</div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{personName}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span>{r.entry_date}</span>
+                          <CatBadge category={r.category} />
+                          {overdue > 0 && <span style={{ color: overdue > 30 ? 'var(--danger)' : 'var(--warning)', fontWeight: 700 }}>{overdue}d overdue</span>}
+                        </div>
                       </div>
                       <StatusChip status={r.status} />
                     </div>
-                    <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>{r.description}</div>
-                    <div style={{ display: 'flex', gap: 16, fontSize: 13, marginBottom: 10 }}>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 8 }}>{r.description}</div>
+                    <div style={{ display: 'flex', gap: 14, fontSize: 13, marginBottom: 8 }}>
                       <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Amount</span><div className="tabular" style={{ fontWeight: 700 }}>{rs(r.amount)}</div></div>
                       <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Paid</span><div className="tabular" style={{ color: 'var(--success)', fontWeight: 700 }}>{rs(r.amount_paid || 0)}</div></div>
                       <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Due</span><div className="tabular" style={{ color: (r.remaining || 0) > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 700 }}>{rs(r.remaining || 0)}</div></div>
                     </div>
                     {isClerk && (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button style={actionBtn} onClick={() => setEditRec(r)}>Edit</button>
-                        <button style={actionBtn} onClick={() => setStatusRec(r)}>Status</button>
-                        <button style={actionBtn} onClick={() => archiveRec(r.id)}>Archive</button>
-                        <button style={{ ...actionBtn, color: 'var(--danger)' }} onClick={() => deleteRec(r.id)}>Del</button>
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        {isClerk && <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSel(r.id)} style={{ marginRight: 4 }} />}
+                        <button style={{ ...actionBtn, fontSize: 11 }} onClick={() => setEditRec(r)}>Edit</button>
+                        <button style={{ ...actionBtn, fontSize: 11 }} onClick={() => setStatusRec(r)}>Status</button>
+                        <button style={{ ...actionBtn, fontSize: 11 }} onClick={() => archiveRec(r.id)}>Archive</button>
+                        <button style={{ ...actionBtn, fontSize: 11, color: 'var(--danger)' }} onClick={() => deleteRec(r.id)}>Del</button>
                       </div>
                     )}
                   </div>
@@ -226,29 +275,28 @@ export default function RecordsTable() {
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
           <button style={pgBtn} onClick={() => setPage(1)} disabled={page === 1}>«</button>
           <button style={pgBtn} onClick={() => setPage(p => p - 1)} disabled={page === 1}>‹</button>
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '0 8px' }}>
-            {page}/{totalPages} ({records.length} records)
-          </span>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '0 8px' }}>{page}/{totalPages} ({records.length} records)</span>
           <button style={pgBtn} onClick={() => setPage(p => p + 1)} disabled={page === totalPages}>›</button>
           <button style={pgBtn} onClick={() => setPage(totalPages)} disabled={page === totalPages}>»</button>
         </div>
       )}
 
-      {showAdd && <AddModal staff={staff} priceItems={priceItems} profile={profile} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refresh(); setOk('Record added.') }} />}
-      {editRec && <EditModal record={editRec} onClose={() => setEditRec(null)} onSaved={() => { setEditRec(null); refresh(); setOk('Record updated.') }} />}
-      {statusRec && <StatusModal record={statusRec} onClose={() => setStatusRec(null)} onSaved={() => { setStatusRec(null); refresh(); setOk('Status updated.') }} />}
+      {showAdd && <AddModal staff={staff} priceItems={priceItems} profile={profile} onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refresh(); showOk('Record added.') }} />}
+      {editRec && <EditModal record={editRec} onClose={() => setEditRec(null)} onSaved={() => { setEditRec(null); refresh(); showOk('Record updated.') }} />}
+      {statusRec && <StatusModal record={statusRec} onClose={() => setStatusRec(null)} onSaved={() => { setStatusRec(null); refresh(); showOk('Status updated.') }} />}
     </div>
   )
 }
 
-const th = { textAlign: 'left', padding: '9px 12px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap' }
-const td = { padding: '9px 12px', borderBottom: '1px solid var(--border-subtle)' }
+const th = { textAlign: 'left', padding: '9px 10px', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap' }
+const td = { padding: '9px 10px', borderBottom: '1px solid var(--border-subtle)' }
 const pgBtn = { background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-secondary)', padding: '6px 12px', borderRadius: 'var(--radius-sm)', fontSize: 13, cursor: 'pointer' }
 
 // ── Add Record Modal ───────────────────────────────────────────────────
 function AddModal({ staff, priceItems, profile, onClose, onSaved }) {
+  const [category, setCategory] = useState('office_staff')
   const [personId, setPersonId] = useState('')
-  const [otherName, setOtherName] = useState('')
+  const [visitorName, setVisitorName] = useState('')
   const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10))
   const [remarks, setRemarks] = useState('')
   const [lineItems, setLineItems] = useState([])
@@ -265,9 +313,12 @@ function AddModal({ staff, priceItems, profile, onClose, onSaved }) {
     pages: lineItems.reduce((s, i) => s + i.qty * (i.pagesPerUnit || 1), 0),
   }), [lineItems])
 
+  const needsPerson = category === 'office_staff'
+  const needsName = category === 'visitor' || category === 'personal'
+
   function addLine() {
     if (pickItem === 'custom') {
-      if (!customName.trim() || !customPrice) { setError('Enter name and price.'); return }
+      if (!customName.trim() || !customPrice) { setError('Enter name and price for custom item.'); return }
       setLineItems(a => [...a, { name: customName.trim(), price: Number(customPrice), qty: Number(pickQty) || 1, pagesPerUnit: 1, inventoryItemId: null }])
       setCustomName(''); setCustomPrice('')
     } else {
@@ -280,13 +331,17 @@ function AddModal({ staff, priceItems, profile, onClose, onSaved }) {
 
   async function save() {
     setError('')
-    if (!personId && !otherName.trim()) { setError('Select a person or enter a name.'); return }
+    if (needsPerson && !personId) { setError('Select a staff person.'); return }
+    if (needsName && !visitorName.trim()) { setError('Enter a name for this ' + (category === 'visitor' ? 'visitor/client' : 'personal record') + '.'); return }
     if (lineItems.length === 0) { setError('Add at least one item.'); return }
     setSaving(true)
+
     const description = lineItems.map(i => `${i.name} x${i.qty}`).join(' + ')
-    const { data: newRec, error: e } = await supabase.from('print_records').insert({
-      person_id: personId || null,
-      other_person_name: personId ? null : otherName.trim(),
+    const insertData = {
+      person_id: needsPerson ? (personId || null) : null,
+      other_person_name: needsName ? visitorName.trim() : null,
+      visitor_name: needsName ? visitorName.trim() : null,
+      category,
       entry_date: entryDate,
       description,
       copies: totals.copies,
@@ -295,47 +350,69 @@ function AddModal({ staff, priceItems, profile, onClose, onSaved }) {
       status: 'Pending',
       remarks: remarks.trim() || null,
       created_by: profile?.id || null,
-    }).select('id').single()
+    }
 
+    const { data: newRec, error: e } = await supabase.from('print_records').insert(insertData).select('id').single()
     if (e) { setError('Could not save: ' + e.message); setSaving(false); return }
 
-    // Auto-deduct from inventory per item
+    // Auto-deduct inventory
     const deductions = {}
     for (const li of lineItems) {
       if (li.inventoryItemId && li.pagesPerUnit > 0) {
-        const pages = li.qty * li.pagesPerUnit
-        deductions[li.inventoryItemId] = (deductions[li.inventoryItemId] || 0) + pages
+        deductions[li.inventoryItemId] = (deductions[li.inventoryItemId] || 0) + li.qty * li.pagesPerUnit
       }
     }
     if (Object.keys(deductions).length > 0 && newRec?.id) {
       await Promise.all(Object.entries(deductions).map(([itemId, qty]) =>
         supabase.from('inventory_transactions').insert({
-          item_id: itemId,
-          txn_type: 'stock_out',
-          quantity: qty,
-          description: `Auto-deduct for print record: ${description}`,
-          source: 'auto',
-          print_record_id: newRec.id,
-          created_by: profile?.id || null,
+          item_id: itemId, txn_type: 'stock_out', quantity: qty,
+          description: `Auto: ${description}`, source: 'auto',
+          print_record_id: newRec.id, created_by: profile?.id || null,
         })
       ))
     }
-    setSaving(false)
-    onSaved()
+    setSaving(false); onSaved()
   }
 
   return (
     <Modal title="Add Print Record" onClose={onClose} width={520}>
+      {/* Category selector */}
       <div style={field}>
-        <label style={label}>Person</label>
-        <select style={select} value={personId} onChange={e => setPersonId(e.target.value)}>
-          <option value="">— Select person —</option>
-          {staff.map(s => <option key={s.id} value={s.id}>{s.full_name} ({s.designation || s.role})</option>)}
-        </select>
+        <label style={label}>Category</label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {CATEGORIES.map(c => (
+            <button key={c.value} type="button" onClick={() => { setCategory(c.value); setPersonId(''); setVisitorName('') }}
+              style={{ flex: 1, padding: '8px 4px', borderRadius: 'var(--radius-sm)', border: `1px solid ${category === c.value ? c.color : 'var(--border)'}`, background: category === c.value ? c.bg : 'var(--bg-elevated)', color: category === c.value ? c.color : 'var(--text-muted)', fontWeight: 700, fontSize: 11.5, cursor: 'pointer', textAlign: 'center' }}>
+              {c.label}
+            </button>
+          ))}
+        </div>
       </div>
-      {!personId && <div style={field}><label style={label}>Or type a name</label><input style={input} value={otherName} onChange={e => setOtherName(e.target.value)} placeholder="e.g. Muhammad Bilal" /></div>}
-      <div style={field}><label style={label}>Date</label><input style={input} type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} /></div>
 
+      {/* Person / Name based on category */}
+      {needsPerson && (
+        <div style={field}>
+          <label style={label}>Staff Person</label>
+          <select style={select} value={personId} onChange={e => setPersonId(e.target.value)}>
+            <option value="">— Select person —</option>
+            {staff.map(s => <option key={s.id} value={s.id}>{s.full_name} ({s.designation || s.role})</option>)}
+          </select>
+        </div>
+      )}
+      {needsName && (
+        <div style={field}>
+          <label style={label}>{category === 'visitor' ? 'Visitor / Client Name' : 'Person / Note'}</label>
+          <input style={input} value={visitorName} onChange={e => setVisitorName(e.target.value)}
+            placeholder={category === 'visitor' ? 'e.g. Muhammad Bilal (walk-in)' : 'e.g. My personal notes x5'} />
+        </div>
+      )}
+
+      <div style={field}>
+        <label style={label}>Date</label>
+        <input style={input} type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} />
+      </div>
+
+      {/* Items */}
       <div style={{ background: 'var(--bg-elevated)', padding: 14, borderRadius: 'var(--radius-md)', marginBottom: 14 }}>
         <label style={{ ...label, display: 'block', marginBottom: 8 }}>Add Item</label>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -343,7 +420,7 @@ function AddModal({ staff, priceItems, profile, onClose, onSaved }) {
             {priceItems.map(p => <option key={p.id} value={p.id}>{p.item_name} — {rs(p.price_per_copy)}/copy ({p.pages_per_unit || 1}pg)</option>)}
             <option value="custom">Custom item…</option>
           </select>
-          <input style={{ ...input, width: 70 }} type="number" min={1} value={pickQty} onChange={e => setPickQty(e.target.value)} placeholder="Qty" />
+          <input style={{ ...input, width: 65 }} type="number" min={1} value={pickQty} onChange={e => setPickQty(e.target.value)} placeholder="Qty" />
         </div>
         {pickItem === 'custom' && (
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -358,13 +435,13 @@ function AddModal({ staff, priceItems, profile, onClose, onSaved }) {
         <div style={{ marginBottom: 14 }}>
           {lineItems.map((it, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 4px', borderBottom: '1px solid var(--border-subtle)', fontSize: 13 }}>
-              <span style={{ flex: 1 }}>{it.name} <span style={{ color: 'var(--text-muted)' }}>×{it.qty}</span> <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({it.qty * (it.pagesPerUnit || 1)} pages)</span></span>
+              <span style={{ flex: 1 }}>{it.name} <span style={{ color: 'var(--text-muted)' }}>×{it.qty}</span> <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({it.qty * (it.pagesPerUnit || 1)} pgs)</span></span>
               <span className="tabular" style={{ color: 'var(--text-secondary)' }}>{rs(it.price * it.qty)}</span>
               <button onClick={() => setLineItems(a => a.filter((_, j) => j !== i))} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>✕</button>
             </div>
           ))}
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 4px 0', fontWeight: 700, fontSize: 13.5 }}>
-            <span>{totals.copies} copies · {totals.pages} pages</span>
+            <span className="tabular">{totals.copies} copies · {totals.pages} pages</span>
             <span className="tabular" style={{ color: 'var(--gold)' }}>{rs(totals.amount)}</span>
           </div>
         </div>
@@ -377,22 +454,20 @@ function AddModal({ staff, priceItems, profile, onClose, onSaved }) {
   )
 }
 
-// ── Edit Record Modal ─────────────────────────────────────────────────
 function EditModal({ record, onClose, onSaved }) {
   const [date, setDate] = useState(record.entry_date)
   const [desc, setDesc] = useState(record.description || '')
   const [copies, setCopies] = useState(record.copies)
   const [amount, setAmount] = useState(record.amount)
   const [remarks, setRemarks] = useState(record.remarks || '')
+  const [category, setCategory] = useState(record.category || 'office_staff')
   const [saving, setSaving] = useState(false)
 
   async function save() {
     setSaving(true)
-    const newAmount = Number(amount)
-    const newRemaining = Math.max(0, newAmount - Number(record.amount_paid || 0))
     await supabase.from('print_records').update({
       entry_date: date, description: desc, copies: Number(copies),
-      amount: newAmount,
+      amount: Number(amount), category,
       remarks: remarks || null, updated_at: new Date().toISOString(),
     }).eq('id', record.id)
     setSaving(false); onSaved()
@@ -400,6 +475,11 @@ function EditModal({ record, onClose, onSaved }) {
 
   return (
     <Modal title="Edit Record" onClose={onClose} width={420}>
+      <div style={field}><label style={label}>Category</label>
+        <select style={select} value={category} onChange={e => setCategory(e.target.value)}>
+          {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </div>
       <div style={field}><label style={label}>Date</label><input style={input} type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
       <div style={field}><label style={label}>Description</label><input style={input} value={desc} onChange={e => setDesc(e.target.value)} /></div>
       <div style={{ display: 'flex', gap: 10 }}>
@@ -412,7 +492,6 @@ function EditModal({ record, onClose, onSaved }) {
   )
 }
 
-// ── Status Modal ──────────────────────────────────────────────────────
 function StatusModal({ record, onClose, onSaved }) {
   const [status, setStatus] = useState(record.status)
   const [amountPaid, setAmountPaid] = useState(record.amount_paid || 0)
@@ -430,8 +509,7 @@ function StatusModal({ record, onClose, onSaved }) {
     } else { finalPaid = 0 }
     setSaving(true)
     await supabase.from('print_records').update({
-      status: finalStatus,
-      amount_paid: finalPaid,
+      status: finalStatus, amount_paid: finalPaid,
       payment_date: finalStatus === 'Paid' ? new Date().toISOString().slice(0, 10) : record.payment_date,
       updated_at: new Date().toISOString(),
     }).eq('id', record.id)
@@ -441,7 +519,7 @@ function StatusModal({ record, onClose, onSaved }) {
   return (
     <Modal title="Update Payment Status" onClose={onClose} width={400}>
       <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-        <strong>{record.person?.full_name || record.other_person_name}</strong> · {record.description}
+        <strong>{record.person?.full_name || record.visitor_name || record.other_person_name}</strong> · {record.description}
         <div className="tabular" style={{ fontWeight: 700, color: 'var(--text-primary)', marginTop: 4 }}>Total: {rs(record.amount)}</div>
       </div>
       <div style={field}><label style={label}>Status</label>
