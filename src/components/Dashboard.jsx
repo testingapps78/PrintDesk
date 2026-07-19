@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
-import { useStaff, usePrintRecords, buildPersonSummary, buildKPIs, rs } from '../lib/data'
+import { useStaff, usePrintRecords, buildPersonSummary, buildKPIs, daysOverdue, rs } from '../lib/data'
 import { supabase } from '../lib/supabase'
 import { StatCard, BalanceRing, SectionTitle } from './shared'
 
@@ -34,11 +34,44 @@ export default function Dashboard() {
   const kpi = useMemo(() => buildKPIs(myRecords), [myRecords])
 
   const personRows = useMemo(() => {
-    const rows = buildPersonSummary(staff, myRecords)
-    return rows.filter(r => r.billed > 0 || r.isStaff).sort((a, b) => {
-      const order = { clerk: 0, manager: 1, ssm: 2, other: 3 }
-      return ((order[a.role] ?? 3) - (order[b.role] ?? 3)) || a.name.localeCompare(b.name)
-    })
+    // Build staff rows normally
+    const staffRows = buildPersonSummary(staff, myRecords)
+      .filter(r => r.billed > 0 || r.isStaff)
+      .sort((a, b) => {
+        const order = { clerk: 0, manager: 1, ssm: 2, other: 3 }
+        return ((order[a.role] ?? 3) - (order[b.role] ?? 3)) || a.name.localeCompare(b.name)
+      })
+
+    // Group visitors + personal into single aggregate rows
+    const visitorAgg = { key: '__visitors__', name: 'Visitors / Clients', designation: 'Walk-in', role: 'visitor', isStaff: false, copies: 0, billed: 0, received: 0, pending: 0, maxOverdue: 0 }
+    const personalAgg = { key: '__personal__', name: 'Personal / Outside', designation: 'Personal', role: 'personal', isStaff: false, copies: 0, billed: 0, received: 0, pending: 0, maxOverdue: 0 }
+
+    for (const r of myRecords) {
+      const cat = r.category || 'office_staff'
+      let target = null
+      if (cat === 'visitor') target = visitorAgg
+      else if (cat === 'personal') target = personalAgg
+      else continue
+
+      target.copies += Number(r.copies) || 0
+      target.billed += Number(r.amount) || 0
+      if (r.status === 'Paid') {
+        target.received += Number(r.amount) || 0
+      } else if (r.status === 'Partially Paid') {
+        target.received += Number(r.amount_paid) || 0
+        target.pending += Number(r.remaining) || 0
+        target.maxOverdue = Math.max(target.maxOverdue, daysOverdue(r.entry_date))
+      } else {
+        target.pending += Number(r.amount) || 0
+        target.maxOverdue = Math.max(target.maxOverdue, daysOverdue(r.entry_date))
+      }
+    }
+
+    const extras = []
+    if (visitorAgg.billed > 0) extras.push(visitorAgg)
+    if (personalAgg.billed > 0) extras.push(personalAgg)
+
+    return [...staffRows, ...extras]
   }, [staff, myRecords])
 
   const filteredRows = personFilter === 'all' ? personRows : personRows.filter(r => r.key === personFilter)
@@ -173,7 +206,11 @@ export default function Dashboard() {
             {filteredRows.map(row => (
               <tr key={row.key}>
                 <td style={td}>
-                  <div style={{ fontWeight: 700 }}>{row.name}</div>
+                  <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {row.name}
+                    {row.key === '__visitors__' && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--warning)', background: 'var(--warning-soft)', padding: '1px 7px', borderRadius: 999 }}>Visitors</span>}
+                    {row.key === '__personal__' && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-elevated)', padding: '1px 7px', borderRadius: 999 }}>Personal</span>}
+                  </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{row.designation || row.role} · {row.copies} copies</div>
                 </td>
                 <td className="tabular" style={{ ...td, textAlign: 'right' }}>{rs(row.billed)}</td>
@@ -192,13 +229,13 @@ export default function Dashboard() {
                 {isClerk && (
                   <td style={td}>
                     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                      {row.pending > 0 && (
+                      {row.pending > 0 && !row.key.startsWith('__') && (
                         <button onClick={() => payAll(row.key, row.name)} disabled={payingAll === row.key}
                           style={{ background: 'var(--success-soft)', border: '1px solid rgba(95,190,138,0.3)', color: 'var(--success)', padding: '4px 9px', borderRadius: 'var(--radius-sm)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                           {payingAll === row.key ? '…' : '✓ Pay All'}
                         </button>
                       )}
-                      {row.received > 0 && (
+                      {row.received > 0 && !row.key.startsWith('__') && (
                         <button onClick={() => archiveAllPaid(row.key, row.name)} disabled={archivingAll === row.key}
                           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-muted)', padding: '4px 9px', borderRadius: 'var(--radius-sm)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
                           title="Archive all paid records for this person (month-end cleanup)">
